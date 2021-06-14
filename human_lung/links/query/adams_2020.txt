@@ -1,0 +1,5 @@
+https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136831/suppl/GSE136831%5FRawCounts%5FSparse%2Emtx%2Egz
+https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136831/suppl/GSE136831%5FAllCells%2EcellBarcodes%2Etxt%2Egz
+https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136831/suppl/GSE136831%5FAllCells%2EGeneIDs%2Etxt%2Egz
+https://ftp.ncbi.nlm.nih.gov/geo/series/GSE136nnn/GSE136831/suppl/GSE136831%5FAllCells%2ESamples%2ECellType%2EMetadataTable%2Etxt%2Egz
+https://www.dropbox.com/s/focnpx7kfpc76e4/adams_gene_ids.csv

@@ -1,0 +1,126 @@
+datasets, = glob_wildcards('links/query/{dataset}.txt')
+
+############################## Download Rules ####################################################
+rule download:
+    input:
+        link = "links/query/{dataset}.txt"
+    output:
+        "logs/download_{dataset}.log"
+    container:
+        "docker://satijalab/seurat:4.0.1"
+    shell:
+        """
+        mkdir -p logs
+        wget -i {input} -P raw_data/{wildcards.dataset}
+        echo "{wildcards.dataset} downloaded on: $(date)" > logs/download_{wildcards.dataset}.log
+        """
+
+rule download_lung_reference:
+    input:
+        link = "links/reference/lung_reference.txt"
+    output:
+        "reference/lung/ref.Rds",
+        "reference/lung/idx.annoy"
+    shell:
+        """
+        mkdir -p reference/lung
+        wget -i {input.link} -P reference/lung
+        echo "Lung reference files downloaded on: $(date)" > logs/download_lung_reference.log
+        """
+
+############################## Lung Mapping #######################################################
+checkpoint preprocess:
+    input:
+        script = "scripts/preprocess/{dataset}.R",
+        log = "logs/download_{dataset}.log"
+    params:
+        dset = "{dataset}"
+    output:
+        directory("seurat_objects/unmapped/{dataset}"),
+    container:
+        "docker://satijalab/seurat:4.0.1"
+    shell:
+        """
+        mkdir -p seurat_objects/unmapped/{wildcards.dataset}
+        Rscript {input.script} {params.dset} {output} > logs/preprocess_{wildcards.dataset}.Rout 2>&1
+        """
+
+rule map:
+    input:
+        script = "scripts/map.R",
+        ref = "reference/lung/ref.Rds",
+        idx = "reference/lung/idx.annoy",
+        query = "seurat_objects/unmapped/{dataset}/{donor}.rds"
+    params:
+        ref_loc = "reference/lung",
+        xfer = ["annotation.l1", "annotation.l2"]
+    output:
+        "seurat_objects/mapped/{dataset}/{donor}.rds"
+    container:
+        "docker://satijalab/azimuth:0.3.1"
+    shell:
+        """
+        mkdir -p seurat_objects/mapped/
+        Rscript {input.script} {input.query} {params.ref_loc} {params.xfer} {output} > logs/map_{wildcards.dataset}_{wildcards.donor}.Rout 2>&1
+        """
+
+def aggregate_mapped_results(wildcards):
+    checkpoint_output = checkpoints.preprocess.get(**wildcards).output[0]
+    return expand("seurat_objects/mapped/{dataset}/{donor}.rds",
+        dataset = wildcards.dataset,
+        donor = glob_wildcards(os.path.join(checkpoint_output, "{donor}.rds")).donor)
+
+rule merge_donor:
+    input:
+        script = "scripts/merge.R",
+        dsets = aggregate_mapped_results 
+    output:
+        "seurat_objects/mapped/{dataset}.rds"
+    container:
+        "docker://satijalab/seurat:4.0.1"
+    shell:
+        """
+        Rscript {input.script} {input.dsets} {output} > logs/merge_donor_{wildcards.dataset}.Rout 2>&1
+        """
+
+rule merge_all:
+    input:
+        script = "scripts/merge.R",
+        dsets = expand("seurat_objects/mapped/{dataset}.rds", dataset = datasets)
+    output:
+        "seurat_objects/mapped/all_merged.rds"
+    container:
+        "docker://satijalab/seurat:4.0.1"
+    shell:
+        """
+        Rscript {input.script} {input.dsets} {output} > logs/merge_all.Rout 2>&1
+        """
+
+############################## Visualization Rules ################################################
+rule download_reference_full:
+    input:                                                                                          
+        link = "links/reference/lung_reference_full.txt"                                                           
+    output:                                                                                         
+        "seurat_objects/lung_reference_full.rds" 
+    shell:                                                                                          
+        """                                                                                         
+        wget -i {input.link} -P seurat_objects/                                                      
+        echo "Lung full reference file downloaded on: $(date)" > logs/download_lung_full_reference.log 
+        """                                                                                         
+
+rule export_cellxgene:
+    input:
+        object = "seurat_objects/mapped/all_merged.rds",
+        ref = "seurat_objects/lung_reference_full.rds",
+        script = "scripts/export_cellxgene.R"
+    output:
+        rds = "cellxgene/lung_mapped_cellxgene.rds",
+        h5seurat = "cellxgene/lung_mapped_cellxgene.h5seurat", 
+        h5ad = "cellxgene/lung_mapped_cellxgene.h5ad"
+    container:
+        "docker://satijalab/azimuth-references:vitessce"
+    shell:
+        """
+        mkdir -p cellxgene
+        Rscript {input.script} {input.object} {input.ref} {output.rds} {output.h5seurat} > logs/export_cellxgene.Rout 2>&1
+        """
